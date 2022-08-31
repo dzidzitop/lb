@@ -7,11 +7,33 @@ public class LoadBalancer
 {
     private static final int MAX_SIZE = 10;
     
+    private interface Selector
+    {
+        public int select();
+    }
+    
+    private class RandomSelector implements Selector
+    {
+        private final Random rnd = new Random(System.nanoTime());
+        
+        @Override
+        public int select()
+        {
+            return rnd.nextInt(instances.length);
+        }
+    }
+    
     private final Provider[] instances;
-    private final Random rnd;
+    private final Selector selector;
     
     public LoadBalancer(final Provider[] instances)
     {
+        this(instances, SelectorType.RANDOM);
+    }
+    
+    public LoadBalancer(final Provider[] instances, final SelectorType selectorType)
+    {
+        Objects.requireNonNull(selectorType);
         final int n = instances.length;
         if (n == 0) {
             throw new IllegalArgumentException("No instances.");
@@ -28,16 +50,23 @@ public class LoadBalancer
             copy[i] = p;
         }
         this.instances = copy;
-        rnd = new Random(System.nanoTime());
+        
+        switch (selectorType) {
+        case RANDOM:
+            selector = new RandomSelector();
+            break;
+        case ROUND_ROBIN:
+            // TODO
+        default:
+            throw new AssertionError(
+                    "Unsupported selector type: " + selectorType);
+        }
     }
     
     public String get()
     {
-        final Provider provider;
-        synchronized (this) {
-            final int idx = rnd.nextInt(instances.length);
-            provider = instances[idx];
-        }
+        final int idx = selector.select();
+        final Provider provider = instances[idx];
         return provider.get();
     }
 }
