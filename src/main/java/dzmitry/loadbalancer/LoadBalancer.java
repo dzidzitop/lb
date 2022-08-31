@@ -8,29 +8,34 @@ public class LoadBalancer
     private static final int MAX_SIZE = 10;
     
     private final Provider[] instances;
-    private int size;
     private final Random rnd;
     
-    public LoadBalancer()
+    public LoadBalancer(final Provider[] instances)
     {
-        instances = new Provider[MAX_SIZE];
-        rnd = new Random(System.nanoTime());
-    }
-    
-    public synchronized void register(final Provider instance)
-    {
-        Objects.requireNonNull(instance);
-        if (size == MAX_SIZE) {
-            throw new IllegalStateException("Max size already reached.");
+        final int n = instances.length;
+        if (n == 0) {
+            throw new IllegalArgumentException("No instances.");
         }
-        instances[size++] = instance;
+        if (n > MAX_SIZE) {
+            throw new IllegalArgumentException(
+                    "Too many instances. Max allowed: " + MAX_SIZE +
+                    ", provided: " + n);
+        }
+        final Provider[] copy = new Provider[n];
+        for (int i = 0; i < n; ++i) {
+            final Provider p = instances[i];
+            Objects.requireNonNull(p, "null provider");
+            copy[i] = p;
+        }
+        this.instances = copy;
+        rnd = new Random(System.nanoTime());
     }
     
     public String get()
     {
         final Provider provider;
         synchronized (this) {
-            final int idx = rnd.nextInt(size);
+            final int idx = rnd.nextInt(instances.length);
             provider = instances[idx];
         }
         return provider.get();
