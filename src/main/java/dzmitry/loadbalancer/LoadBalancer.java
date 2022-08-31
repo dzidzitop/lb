@@ -2,6 +2,7 @@ package dzmitry.loadbalancer;
 
 import java.util.Objects;
 import java.util.Random;
+import java.util.concurrent.atomic.AtomicInteger;
 
 public class LoadBalancer
 {
@@ -20,6 +21,18 @@ public class LoadBalancer
         public int select()
         {
             return rnd.nextInt(instances.length);
+        }
+    }
+    
+    private class RoundRobinSelector implements Selector
+    {
+        private final AtomicInteger counter = new AtomicInteger();
+        
+        @Override
+        public int select()
+        {
+            final int n = instances.length;
+            return Util.moduloIncrement(counter, n);
         }
     }
     
@@ -56,7 +69,8 @@ public class LoadBalancer
             selector = new RandomSelector();
             break;
         case ROUND_ROBIN:
-            // TODO
+            selector = new RoundRobinSelector();
+            break;
         default:
             throw new AssertionError(
                     "Unsupported selector type: " + selectorType);
