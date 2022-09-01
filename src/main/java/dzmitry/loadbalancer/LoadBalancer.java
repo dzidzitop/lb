@@ -2,7 +2,6 @@ package dzmitry.loadbalancer;
 
 import java.util.Objects;
 import java.util.Random;
-import java.util.concurrent.atomic.AtomicInteger;
 
 public class LoadBalancer
 {
@@ -20,7 +19,12 @@ public class LoadBalancer
         @Override
         public int select()
         {
-            return rnd.nextInt(instances.length);
+            final int[] activeIdxs = activeNodes;
+            final int n = activeIdxs.length;
+            if (n == 0) {
+                throw new IllegalStateException("No active instances.");
+            }
+            return activeIdxs[rnd.nextInt(n)];
         }
     }
     
@@ -35,10 +39,21 @@ public class LoadBalancer
         
         public int select()
         {
-            final int n = instances.length;
-            final int val;
+            final int[] activeIdxs = activeNodes;
+            final int n = activeIdxs.length;
+            if (n == 0) {
+                throw new IllegalStateException("No active instances.");
+            }
+            int val;
             synchronized (this) {
                 val = cnt;
+                if (val >= n) {
+                    /* Some nodes were excluded between two calls and
+                     * this is causing overflow. Resetting the counter
+                     * to the beginning of the active node list.
+                     */
+                    val = 0;
+                }
                 int next = val + 1;
                 if (next == n) {
                     next = 0;
@@ -51,6 +66,15 @@ public class LoadBalancer
     
     private final Provider[] instances;
     private final Selector selector;
+    /* Contains indices of instances in the {@code instances} array
+     * which are considered active (alive).
+     * 
+     * It is replaced each time the list of active nodes is modified.
+     * So, after the array reference is read it can be used freely
+     * as long as it is a consistent snapshot of active nodes which
+     * was valid at the time this array is read.
+     */
+    private volatile int[] activeNodes;
     
     public LoadBalancer(final Provider[] instances)
     {
@@ -76,6 +100,11 @@ public class LoadBalancer
             copy[i] = p;
         }
         this.instances = copy;
+        final int[] activeIdxs = new int[n];
+        for (int i = 0; i < n; ++i) {
+            activeIdxs[i] = i;
+        }
+        activeNodes = activeIdxs;
         
         switch (selectorType) {
         case RANDOM:
