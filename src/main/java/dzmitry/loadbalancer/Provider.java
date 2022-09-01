@@ -11,6 +11,11 @@ public class Provider
         uuid = UUID.randomUUID().toString();
     }
     
+    public String getUuid()
+    {
+        return uuid;
+    }
+    
     public String get()
     {
         return uuid;
