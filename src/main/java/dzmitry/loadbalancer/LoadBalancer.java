@@ -69,10 +69,15 @@ public class LoadBalancer
         }
     }
     
-    private final Map<String, Integer> uuidToIdx;
+    /** All instances this load balancer manages. Indices of active
+     * instances are stored in {@code activeNodes}. */
     private final Provider[] instances;
+    
+    /** Strategy to distribute load used by this load balancer. */
     private final Selector selector;
-    /* Contains indices of instances in the {@code instances} array
+    
+    /**
+     * Contains indices of instances in the {@code instances} array
      * which are considered active (alive).
      * 
      * It is replaced each time the list of active nodes is modified.
@@ -81,7 +86,16 @@ public class LoadBalancer
      * was valid at the time this array is read.
      */
     private volatile int[] activeNodes;
+    
+    /** Used to synchronise upon to activate/deactivate nodes. */
     private final Object activeNodeLock;
+    
+    /**
+     * Mapping from node UUID and its index in {@code instances}.
+     * Useful to simplify and speedup algorithms that change
+     * set of active nodes.
+     */
+    private final Map<String, Integer> uuidToIdx;
     
     public LoadBalancer(final Provider[] instances)
     {
@@ -110,7 +124,7 @@ public class LoadBalancer
         }
         this.instances = copy;
         this.uuidToIdx = uuidToIdx;
-                
+        
         final int[] activeIdxs = new int[n];
         for (int i = 0; i < n; ++i) {
             activeIdxs[i] = i;
@@ -139,6 +153,7 @@ public class LoadBalancer
     }
     
     // TODO report wrong UUIDs?
+    // TODO implement a faster function for a single UUID
     public void excludeNodes(final String ...uuids)
     {
         /* It costs O(activeNodes.length) which can be too expensive
