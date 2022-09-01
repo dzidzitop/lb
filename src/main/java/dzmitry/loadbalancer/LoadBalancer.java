@@ -26,13 +26,26 @@ public class LoadBalancer
     
     private class RoundRobinSelector implements Selector
     {
-        private final AtomicInteger counter = new AtomicInteger();
+        private int cnt;
         
-        @Override
+        public RoundRobinSelector()
+        {
+            cnt = 0;
+        }
+        
         public int select()
         {
             final int n = instances.length;
-            return Util.moduloIncrement(counter, n);
+            final int val;
+            synchronized (this) {
+                val = cnt;
+                int next = val + 1;
+                if (next == n) {
+                    next = 0;
+                }
+                cnt = next;
+            }
+            return val;
         }
     }
     
