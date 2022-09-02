@@ -91,6 +91,7 @@ public class LoadBalancer implements AutoCloseable
     private final Object activeNodeLock;
     
     private final HeartbeatChecker heartbeatChecker;
+    private final HeartbeatCheckResultHandler heartbeatHandler;
     private final long heartbeatCheckRateMs;
     private final long heartbeatCheckTimeoutMs;
     private boolean heartbeatCheckStarted;
@@ -116,6 +117,7 @@ public class LoadBalancer implements AutoCloseable
     public LoadBalancer(final Provider[] instances,
             final SelectorType selectorType,
             final HeartbeatChecker heartbeatChecker,
+            final HeartbeatCheckResultHandler heartbeatHandler,
             final long heartbeatCheckRateMs,
             final long heartbeatCheckTimeoutMs)
     {
@@ -160,6 +162,7 @@ public class LoadBalancer implements AutoCloseable
         }
         
         this.heartbeatChecker = heartbeatChecker;
+        this.heartbeatHandler = heartbeatHandler;
         this.heartbeatCheckRateMs = heartbeatCheckRateMs;
         this.heartbeatCheckTimeoutMs = heartbeatCheckTimeoutMs;
     }
@@ -248,7 +251,8 @@ public class LoadBalancer implements AutoCloseable
                     for (final Provider node : instances) {
                         heartbeatChecker.registerChecker(
                                 () -> node.check(),
-                                result -> handleHeartbeatCheckResult(node, result),
+                                result -> heartbeatHandler.handle(
+                                        result, this, node),
                                 heartbeatCheckRateMs, heartbeatCheckTimeoutMs);
                     }
                     heartbeatCheckStarted = true;
@@ -262,14 +266,6 @@ public class LoadBalancer implements AutoCloseable
     {
         if (heartbeatChecker != null) {
             heartbeatChecker.close();
-        }
-    }
-    
-    private void handleHeartbeatCheckResult(final Provider node,
-            final boolean checkResult)
-    {
-        if (checkResult == false) {
-            excludeNodes(node.getUuid());
         }
     }
 }
