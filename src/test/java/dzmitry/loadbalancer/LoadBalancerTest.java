@@ -214,6 +214,76 @@ public class LoadBalancerTest
     }
     
     @Test
+    public void testTooManyRequests_WithInactiveProviders() throws Exception
+    {
+        final AtomicBoolean asyncFailure = new AtomicBoolean();
+        final int rqsPerNode = 3;
+        final int maxRqs = rqsPerNode * 2;
+        final CountDownLatch getLatch = new CountDownLatch(1);
+        final CountDownLatch testLatch = new CountDownLatch(maxRqs);
+        final Provider p1 = provider("p1", () -> {
+            try {
+                testLatch.countDown();
+                getLatch.await();
+                return "val1";
+            }
+            catch (Throwable ex) {
+                asyncFailure.set(true);
+                throw new RuntimeException(ex);
+            }
+        });
+        final Provider p2 = provider("p2", () -> {
+            try {
+                testLatch.countDown();
+                getLatch.await();
+                return "val2";
+            }
+            catch (Throwable ex) {
+                asyncFailure.set(true);
+                throw new RuntimeException(ex);
+            }
+        });
+        final Provider p3 = provider("p3", "val3");
+        
+        final LoadBalancer balancer = new LoadBalancer(
+                new Provider[]{p1, p2, p3}, rqsPerNode);
+        
+        balancer.excludeNodes("p3");
+        
+        final Thread[] threads = new Thread[maxRqs];
+        
+        for (int i = 0; i < maxRqs; ++i) {
+            final Thread t = new Thread(() -> {
+                testLatch.countDown();
+                balancer.get();
+            });
+            t.setDaemon(true);
+            t.start();
+            threads[i] = t;
+        }
+        
+        try {
+            testLatch.await(10, TimeUnit.SECONDS);
+            
+            // Request limit reached. Forcing overload.
+            assertThrows(IllegalStateException.class, () -> balancer.get());
+            
+            getLatch.countDown();
+        }
+        finally {
+            for (int i = 0; i < maxRqs; ++i) {
+                threads[i].join(10_000);
+            }
+        }
+        
+        assertFalse(asyncFailure.get());
+        
+        final HashSet<String> values = new HashSet<>(Arrays.asList("val1", "val2"));
+        
+        assertTrue(values.contains(balancer.get()));
+    }
+    
+    @Test
     public void testHeartbeatChecking_NoHeartbeatChecker()
     {
         final Provider p1 = provider("p1", "val1");

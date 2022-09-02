@@ -76,8 +76,11 @@ public class LoadBalancer implements AutoCloseable
     /** Strategy to distribute load used by this load balancer. */
     private final Selector selector;
     
-    /** The maximum number of simultaneous requests allowed. */
-    private final long maxRequests;
+    /**
+     * The maximum number of simultaneous requests allowed
+     * for a single node.
+     */
+    private final int maxLoadPerNode;
     /** Holds number of requests that are currently being processed. */
     private long requestCounter;
     /** This lock is used to count active requests. */
@@ -178,7 +181,7 @@ public class LoadBalancer implements AutoCloseable
                     "Unsupported selector type: " + selectorType);
         }
         
-        maxRequests = (long) maxLoadPerNode * n;
+        this.maxLoadPerNode = maxLoadPerNode;
         requestCounter = 0;
         requestCounterLock = new Object();
         
@@ -192,6 +195,7 @@ public class LoadBalancer implements AutoCloseable
     {
         boolean accepted = false;
         synchronized (requestCounterLock) {
+            final long maxRequests = maxLoadPerNode * activeNodes.length;
             if (requestCounter < maxRequests) {
                 ++requestCounter;
                 accepted = true;
