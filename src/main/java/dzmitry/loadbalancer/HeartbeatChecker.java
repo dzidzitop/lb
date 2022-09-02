@@ -9,7 +9,7 @@ import java.util.concurrent.TimeoutException;
 import java.util.function.BooleanSupplier;
 import java.util.function.Consumer;
 
-class HeartbeatChecker implements AutoCloseable
+public class HeartbeatChecker implements AutoCloseable
 {
     private final ScheduledExecutorService executor;
     
