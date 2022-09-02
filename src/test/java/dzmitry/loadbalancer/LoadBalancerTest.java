@@ -4,6 +4,11 @@ import static org.junit.jupiter.api.Assertions.*;
 
 import java.util.Arrays;
 import java.util.HashSet;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.CyclicBarrier;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.function.Supplier;
 
 import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
@@ -126,11 +131,89 @@ public class LoadBalancerTest
         assertEquals("val2", balancer.get());
     }
     
+    @Test
+    public void testTooManyRequests() throws Exception
+    {
+        final AtomicBoolean asyncFailure = new AtomicBoolean();
+        final int rqsPerNode = 3;
+        final int maxRqs = rqsPerNode * 2;
+        final CountDownLatch getLatch = new CountDownLatch(1);
+        final CountDownLatch testLatch = new CountDownLatch(maxRqs);
+        final Provider p1 = provider("p1", () -> {
+            try {
+                testLatch.countDown();
+                getLatch.await();
+                return "val1";
+            }
+            catch (Throwable ex) {
+                asyncFailure.set(true);
+                throw new RuntimeException(ex);
+            }
+        });
+        final Provider p2 = provider("p2", () -> {
+            try {
+                testLatch.countDown();
+                getLatch.await();
+                return "val2";
+            }
+            catch (Throwable ex) {
+                asyncFailure.set(true);
+                throw new RuntimeException(ex);
+            }
+        });
+        
+        final LoadBalancer balancer = new LoadBalancer(
+                new Provider[]{p1, p2}, rqsPerNode);
+        
+        final Thread[] threads = new Thread[maxRqs];
+        
+        for (int i = 0; i < maxRqs; ++i) {
+            final Thread t = new Thread(() -> {
+                testLatch.countDown();
+                balancer.get();
+            });
+            t.setDaemon(true);
+            t.start();
+            threads[i] = t;
+        }
+        
+        try {
+            testLatch.await(10, TimeUnit.SECONDS);
+            
+            // Request limit reached. Forcing overload.
+            assertThrows(IllegalStateException.class, () -> balancer.get());
+            
+            getLatch.countDown();
+        }
+        finally {
+            for (int i = 0; i < maxRqs; ++i) {
+                threads[i].join(10_000);
+            }
+        }
+        
+        assertFalse(asyncFailure.get());
+        
+        final HashSet<String> values = new HashSet<>(Arrays.asList("val1", "val2"));
+        
+        assertTrue(values.contains(balancer.get()));
+    }
+    
     private static Provider provider(final String uuid, final String val)
     {
         final Provider result = Mockito.mock(Provider.class);
         Mockito.when(result.getUuid()).thenReturn(uuid);
         Mockito.when(result.get()).thenReturn(val);
+        return result;
+    }
+    
+    private static Provider provider(final String uuid,
+            final Supplier<String> getImpl)
+    {
+        final Provider result = Mockito.mock(Provider.class);
+        Mockito.when(result.getUuid()).thenReturn(uuid);
+        Mockito.when(result.get()).thenAnswer(inv -> {
+            return getImpl.get();
+        });
         return result;
     }
 }
