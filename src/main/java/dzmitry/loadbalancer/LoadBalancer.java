@@ -8,7 +8,7 @@ import java.util.Objects;
 import java.util.Random;
 import java.util.Set;
 
-public class LoadBalancer
+public class LoadBalancer implements AutoCloseable
 {
     private static final int MAX_SIZE = 10;
     
@@ -90,6 +90,11 @@ public class LoadBalancer
     /** Used to synchronise upon to activate/deactivate nodes. */
     private final Object activeNodeLock;
     
+    private final HeartbeatChecker heartbeatChecker;
+    private final long heartbeatCheckRateMs;
+    private final long heartbeatCheckTimeoutMs;
+    private boolean heartbeatCheckStarted;
+    
     /**
      * Mapping from node UUID and its index in {@code instances}.
      * Useful to simplify and speedup algorithms that change
@@ -102,7 +107,17 @@ public class LoadBalancer
         this(instances, SelectorType.RANDOM);
     }
     
-    public LoadBalancer(final Provider[] instances, final SelectorType selectorType)
+    public LoadBalancer(final Provider[] instances,
+            final SelectorType selectorType)
+    {
+        this(instances, selectorType, null, -1, -1);
+    }
+    
+    public LoadBalancer(final Provider[] instances,
+            final SelectorType selectorType,
+            final HeartbeatChecker heartbeatChecker,
+            final long heartbeatCheckRateMs,
+            final long heartbeatCheckTimeoutMs)
     {
         Objects.requireNonNull(selectorType);
         final int n = instances.length;
@@ -143,6 +158,10 @@ public class LoadBalancer
             throw new AssertionError(
                     "Unsupported selector type: " + selectorType);
         }
+        
+        this.heartbeatChecker = heartbeatChecker;
+        this.heartbeatCheckRateMs = heartbeatCheckRateMs;
+        this.heartbeatCheckTimeoutMs = heartbeatCheckTimeoutMs;
     }
     
     public String get()
@@ -216,5 +235,41 @@ public class LoadBalancer
     {
         assert Thread.holdsLock(activeNodeLock);
         activeNodes = Arrays.copyOf(newActiveNodes, nodeCount);
+    }
+    
+    /* It is not inside a constructor to avoid exposing
+     * a reference to an unconstructed object.
+     */
+    public void startHeartbeatChecking()
+    {
+        if (heartbeatChecker != null) {
+            synchronized (this) {
+                if (!heartbeatCheckStarted) {
+                    for (final Provider node : instances) {
+                        heartbeatChecker.registerChecker(
+                                () -> node.check(),
+                                result -> handleHeartbeatCheckResult(node, result),
+                                heartbeatCheckRateMs, heartbeatCheckTimeoutMs);
+                    }
+                    heartbeatCheckStarted = true;
+                }
+            }
+        }
+    }
+    
+    @Override
+    public void close()
+    {
+        if (heartbeatChecker != null) {
+            heartbeatChecker.close();
+        }
+    }
+    
+    private void handleHeartbeatCheckResult(final Provider node,
+            final boolean checkResult)
+    {
+        if (checkResult == false) {
+            excludeNodes(node.getUuid());
+        }
     }
 }

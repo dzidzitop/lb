@@ -20,4 +20,9 @@ public class Provider
     {
         return uuid;
     }
+    
+    public boolean check()
+    {
+        return true;
+    }
 }
