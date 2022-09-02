@@ -65,7 +65,7 @@ public class LoadBalancer implements AutoCloseable
                 }
                 cnt = next;
             }
-            return val;
+            return activeIdxs[val];
         }
     }
     
