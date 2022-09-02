@@ -1,13 +1,17 @@
 package dzmitry.loadbalancer;
 
 import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.ArgumentMatchers.*;
 
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashSet;
+import java.util.List;
 import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.CyclicBarrier;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.function.BooleanSupplier;
+import java.util.function.Consumer;
 import java.util.function.Supplier;
 
 import org.junit.jupiter.api.Test;
@@ -18,8 +22,19 @@ public class LoadBalancerTest
     @Test
     public void testNoProviders()
     {
-         assertThrows(IllegalArgumentException.class,
+        assertThrows(IllegalArgumentException.class,
                  () -> new LoadBalancer(new Provider[0], 3));
+    }
+    
+    @Test
+    public void testTooManyNoProviders()
+    {
+        final Provider[] providers = new Provider[11];
+        for (int i = 0; i < providers.length; ++i) {
+            providers[i] = Mockito.mock(Provider.class);
+        }
+        assertThrows(IllegalArgumentException.class,
+                 () -> new LoadBalancer(providers, 3));
     }
     
     @Test
@@ -196,6 +211,87 @@ public class LoadBalancerTest
         final HashSet<String> values = new HashSet<>(Arrays.asList("val1", "val2"));
         
         assertTrue(values.contains(balancer.get()));
+    }
+    
+    @Test
+    public void testHeartbeatChecking_NoHeartbeatChecker()
+    {
+        final Provider p1 = provider("p1", "val1");
+        
+        final LoadBalancer balancer = new LoadBalancer(new Provider[]{p1}, 3);
+        
+        balancer.startHeartbeatChecking();
+        balancer.close();
+    }
+    
+    @Test
+    public void testHeartbeatChecking_WithHeartbeatChecker()
+    {
+        final HeartbeatChecker checker = Mockito.mock(HeartbeatChecker.class);
+        final HeartbeatCheckResultHandler handler =
+                Mockito.mock(HeartbeatCheckResultHandler.class);
+        final Provider p1 = provider("p1", "val1");
+        final Provider p2 = provider("p2", "val2");
+        
+        final List<BooleanSupplier> checkCallbacks = new ArrayList<>();
+        final List<Consumer<Boolean>> handleCallbacks = new ArrayList<>();
+        
+        Mockito.doAnswer(inv -> {
+            checkCallbacks.add(inv.getArgument(0));
+            handleCallbacks.add(inv.getArgument(1));
+            return null;
+        }).when(checker).registerChecker(any(), any(), anyLong(), anyLong());
+        
+        final LoadBalancer balancer = new LoadBalancer(
+                new Provider[]{p1, p2}, SelectorType.RANDOM, 3,
+                checker, handler, 123, 456);
+        
+        balancer.startHeartbeatChecking();
+        
+        Mockito.verify(checker, Mockito.times(2)).registerChecker(
+                notNull(), notNull(), eq(123L), eq(456L));
+        
+        Mockito.verify(p1, Mockito.never()).check();
+        Mockito.verify(p2, Mockito.never()).check();
+        
+        checkCallbacks.forEach(cb -> cb.getAsBoolean());
+        Mockito.verify(p1).check();
+        Mockito.verify(p2).check();
+        
+        Mockito.verify(handler, Mockito.never()).handle(anyBoolean(), any(), any());
+        
+        handleCallbacks.forEach(cb -> cb.accept(Boolean.TRUE));
+        Mockito.verify(handler).handle(true, balancer, p1);
+        Mockito.verify(handler).handle(true, balancer, p2);
+        Mockito.verifyNoMoreInteractions(handler);
+        
+        Mockito.verify(checker, Mockito.never()).close();
+        balancer.close();
+        Mockito.verify(checker).close();
+    }
+    
+    @Test
+    public void testStartHeartbeatChecking_WithHeartbeatChecker_RepeatedCall()
+    {
+        final HeartbeatChecker checker = Mockito.mock(HeartbeatChecker.class);
+        final HeartbeatCheckResultHandler handler =
+                Mockito.mock(HeartbeatCheckResultHandler.class);
+        final Provider p1 = provider("p1", "val1");
+        final Provider p2 = provider("p2", "val2");
+        
+        final LoadBalancer balancer = new LoadBalancer(
+                new Provider[]{p1, p2}, SelectorType.RANDOM, 3,
+                checker, handler, 123, 456);
+        
+        balancer.startHeartbeatChecking();
+        
+        Mockito.verify(checker, Mockito.times(2)).registerChecker(
+                notNull(), notNull(), eq(123L), eq(456L));
+        
+        balancer.startHeartbeatChecking();
+        
+        Mockito.verify(checker, Mockito.times(2)).registerChecker(
+                notNull(), notNull(), eq(123L), eq(456L));
     }
     
     private static Provider provider(final String uuid, final String val)
