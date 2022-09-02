@@ -76,6 +76,13 @@ public class LoadBalancer implements AutoCloseable
     /** Strategy to distribute load used by this load balancer. */
     private final Selector selector;
     
+    /** The maximum number of simultaneous requests allowed. */
+    private final long maxRequests;
+    /** Holds number of requests that are currently being processed. */
+    private long requestCounter;
+    /** This lock is used to count active requests. */
+    private final Object requestCounterLock;
+    
     /**
      * Contains indices of instances in the {@code instances} array
      * which are considered active (alive).
@@ -92,7 +99,17 @@ public class LoadBalancer implements AutoCloseable
     
     private final HeartbeatChecker heartbeatChecker;
     private final HeartbeatCheckResultHandler heartbeatHandler;
+    /**
+     * Time interval of issuing another heartbeat check after the time
+     * when the previous check should be issued. Constant rate of
+     * issuing requests is followed regardless of how responsive
+     * nodes are.
+     */
     private final long heartbeatCheckRateMs;
+    /**
+     * Timeout in milliseconds for waiting a response from a
+     * heartbeat check call.
+     */
     private final long heartbeatCheckTimeoutMs;
     private boolean heartbeatCheckStarted;
     
@@ -103,19 +120,19 @@ public class LoadBalancer implements AutoCloseable
      */
     private final Map<String, Integer> uuidToIdx;
     
-    public LoadBalancer(final Provider[] instances)
+    public LoadBalancer(final Provider[] instances, final int maxLoadPerNode)
     {
-        this(instances, SelectorType.RANDOM);
+        this(instances, SelectorType.RANDOM, maxLoadPerNode);
     }
     
     public LoadBalancer(final Provider[] instances,
-            final SelectorType selectorType)
+            final SelectorType selectorType, final int maxLoadPerNode)
     {
-        this(instances, selectorType, null, null, -1, -1);
+        this(instances, selectorType, maxLoadPerNode, null, null, -1, -1);
     }
     
     public LoadBalancer(final Provider[] instances,
-            final SelectorType selectorType,
+            final SelectorType selectorType, final int maxLoadPerNode,
             final HeartbeatChecker heartbeatChecker,
             final HeartbeatCheckResultHandler heartbeatHandler,
             final long heartbeatCheckRateMs,
@@ -161,6 +178,10 @@ public class LoadBalancer implements AutoCloseable
                     "Unsupported selector type: " + selectorType);
         }
         
+        maxRequests = (long) maxLoadPerNode * n;
+        requestCounter = 0;
+        requestCounterLock = new Object();
+        
         this.heartbeatChecker = heartbeatChecker;
         this.heartbeatHandler = heartbeatHandler;
         this.heartbeatCheckRateMs = heartbeatCheckRateMs;
@@ -169,9 +190,28 @@ public class LoadBalancer implements AutoCloseable
     
     public String get()
     {
-        final int idx = selector.select();
-        final Provider provider = instances[idx];
-        return provider.get();
+        boolean accepted = false;
+        synchronized (requestCounterLock) {
+            if (requestCounter < maxRequests) {
+                ++requestCounter;
+                accepted = true;
+            }
+        }
+        if (accepted) {
+            try {
+                final int idx = selector.select();
+                final Provider provider = instances[idx];
+                return provider.get();
+            }
+            finally {
+                synchronized (requestCounterLock) {
+                    --requestCounter;
+                }
+            }
+        } else {
+            throw new IllegalStateException(
+                    "Max number of simultaneous requests reached.");
+        }
     }
     
     // TODO report wrong UUIDs?
