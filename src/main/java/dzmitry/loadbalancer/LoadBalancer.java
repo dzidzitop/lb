@@ -111,7 +111,7 @@ public class LoadBalancer implements AutoCloseable
     public LoadBalancer(final Provider[] instances,
             final SelectorType selectorType)
     {
-        this(instances, selectorType, null, -1, -1);
+        this(instances, selectorType, null, null, -1, -1);
     }
     
     public LoadBalancer(final Provider[] instances,
