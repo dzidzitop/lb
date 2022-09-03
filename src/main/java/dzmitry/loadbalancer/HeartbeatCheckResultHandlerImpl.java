@@ -64,7 +64,7 @@ public class HeartbeatCheckResultHandlerImpl
              */
             if (checkResult == false) {
                 wrapper.lastSuccessfulChecks = 0;
-                balancer.excludeNodes(node.getUuid());
+                balancer.excludeNode(node.getUuid());
             } else {
                 int lastSuccChecks = wrapper.lastSuccessfulChecks;
                 if (lastSuccChecks < MAX_RELEVANT_SUCCESSFUL_CHECKS) {
@@ -73,7 +73,7 @@ public class HeartbeatCheckResultHandlerImpl
                     wrapper.lastSuccessfulChecks = lastSuccChecks;
                     
                     if (lastSuccChecks == MAX_RELEVANT_SUCCESSFUL_CHECKS) {
-                        balancer.includeNodes(node.getUuid());
+                        balancer.includeNode(node.getUuid());
                     }
                 }
             }

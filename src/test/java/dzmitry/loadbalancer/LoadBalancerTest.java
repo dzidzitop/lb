@@ -47,11 +47,11 @@ public class LoadBalancerTest
         assertEquals("val1", balancer.get());
         assertEquals("val1", balancer.get());
         
-        balancer.excludeNodes("p1");
+        balancer.excludeNode("p1");
         
         assertThrows(IllegalStateException.class, () -> balancer.get());
         
-        balancer.includeNodes("p1");
+        balancer.includeNode("p1");
         
         assertEquals("val1", balancer.get());
     }
@@ -69,20 +69,20 @@ public class LoadBalancerTest
         assertTrue(values.contains(balancer.get()));
         assertTrue(values.contains(balancer.get()));
         
-        balancer.excludeNodes("p1");
+        balancer.excludeNode("p1");
         
         assertEquals("val2", balancer.get());
         
-        balancer.includeNodes("p1");
-        balancer.excludeNodes("p2");
+        balancer.includeNode("p1");
+        balancer.excludeNode("p2");
         
         assertEquals("val1", balancer.get());
         
-        balancer.excludeNodes("p1");
+        balancer.excludeNode("p1");
         
         assertThrows(IllegalStateException.class, () -> balancer.get());
         
-        balancer.includeNodes("p2");
+        balancer.includeNode("p2");
         
         assertEquals("val2", balancer.get());
     }
@@ -105,11 +105,11 @@ public class LoadBalancerTest
         assertEquals("val1", balancer.get());
         assertEquals("val1", balancer.get());
         
-        balancer.excludeNodes("p1");
+        balancer.excludeNode("p1");
         
         assertThrows(IllegalStateException.class, () -> balancer.get());
         
-        balancer.includeNodes("p1");
+        balancer.includeNode("p1");
         
         assertEquals("val1", balancer.get());
     }
@@ -128,20 +128,20 @@ public class LoadBalancerTest
         assertEquals("val1", balancer.get());
         assertEquals("val2", balancer.get());
         
-        balancer.excludeNodes("p1");
+        balancer.excludeNode("p1");
         
         assertEquals("val2", balancer.get());
         
-        balancer.includeNodes("p1");
-        balancer.excludeNodes("p2");
+        balancer.includeNode("p1");
+        balancer.excludeNode("p2");
         
         assertEquals("val1", balancer.get());
         
-        balancer.excludeNodes("p1");
+        balancer.excludeNode("p1");
         
         assertThrows(IllegalStateException.class, () -> balancer.get());
         
-        balancer.includeNodes("p2");
+        balancer.includeNode("p2");
         
         assertEquals("val2", balancer.get());
     }
@@ -160,28 +160,28 @@ public class LoadBalancerTest
         assertEquals("val1", balancer.get());
         assertEquals("val2", balancer.get());
         
-        balancer.excludeNodes("p1");
+        balancer.excludeNode("p1");
         
         assertEquals("val2", balancer.get());
         
-        balancer.includeNodes("p1");
-        balancer.excludeNodes("p2");
+        balancer.includeNode("p1");
+        balancer.excludeNode("p2");
         
         assertEquals("val1", balancer.get());
         
-        balancer.excludeNodes("p2");
+        balancer.excludeNode("p2");
         
         assertEquals("val1", balancer.get());
         
-        balancer.excludeNodes("p1");
+        balancer.excludeNode("p1");
         
         assertThrows(IllegalStateException.class, () -> balancer.get());
         
-        balancer.includeNodes("p2");
+        balancer.includeNode("p2");
         
         assertEquals("val2", balancer.get());
         
-        balancer.includeNodes("p2");
+        balancer.includeNode("p2");
         
         assertEquals("val2", balancer.get());
     }
@@ -285,7 +285,7 @@ public class LoadBalancerTest
         final LoadBalancer balancer = new LoadBalancer(
                 new Provider[]{p1, p2, p3}, rqsPerNode);
         
-        balancer.excludeNodes("p3");
+        balancer.excludeNode("p3");
         
         final Thread[] threads = new Thread[maxRqs];
         

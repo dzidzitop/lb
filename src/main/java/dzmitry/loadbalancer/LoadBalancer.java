@@ -6,7 +6,6 @@ import java.util.HashSet;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Random;
-import java.util.Set;
 
 public class LoadBalancer implements AutoCloseable
 {
@@ -218,37 +217,74 @@ public class LoadBalancer implements AutoCloseable
         }
     }
     
-    // TODO report wrong UUIDs?
-    // TODO implement a faster function for a single UUID
-    public void excludeNodes(final String ...uuids)
+    public void excludeNode(final String uuid)
     {
-        /* It costs O(activeNodes.length) which can be too expensive
+        /* 
+         * It costs O(activeNodes.length) which can be too expensive
          * for large instance pools. If it is the case and if active
          * nodes updated frequently then adapt data structures to support
          * complexity closer to the number of nodes to exclude.
          */
-        final Set<String> uuidsToExclude = Set.of(uuids);
+        
+        final int nodeIdx = getNodeIdx(uuid);
+        
+        /* Checking if it is already excluded (to increase parallelism
+         * and produce less memory garbage).
+         */
+        quickCheck: {
+            final int[] activeIdxs = activeNodes;
+            for (int activeIdx : activeIdxs) {
+                if (nodeIdx == activeIdx) {
+                    break quickCheck;
+                }
+            }
+            /* It is already inactive. No need to change any supplementary
+             * structure. (Of course this can become obsolete a moment
+             * after taking a snapshot of active nodes).
+             */
+            return;
+        }
+        
         synchronized (activeNodeLock) {
             final int[] activeIdxs = activeNodes;
             final int[] newActiveIdxs = new int[activeIdxs.length];
             int newCount = 0;
-            for (final int idx : activeIdxs) {
-                final Provider instance = instances[idx];
-                if (!uuidsToExclude.contains(instance.getUuid())) {
-                    newActiveIdxs[newCount++] = idx;
+            for (final int activeIdx : activeIdxs) {
+                if (nodeIdx != activeIdx) {
+                    newActiveIdxs[newCount++] = activeIdx;
                 }
             }
             replaceActiveNodes(newActiveIdxs, newCount);
         }
     }
     
-    public void includeNodes(final String ...uuids)
+    public void includeNode(final String uuid)
     {
-        /* It costs O(instances.length) which can be too expensive
+        /* 
+         * It costs O(instances.length) which can be too expensive
          * for large instance pools. If it is the case and if active
          * nodes updated frequently then adapt data structures to support
          * complexity closer to the number of nodes to exclude.
          */
+        
+        final int nodeIdx = getNodeIdx(uuid);
+        
+        /* Checking if it is already included (to increase parallelism
+         * and produce less memory garbage).
+         */
+        {
+            final int[] activeIdxs = activeNodes;
+            for (int activeIdx : activeIdxs) {
+                if (nodeIdx == activeIdx) {
+                    /* Already active. Nothing to do. (Of course this can
+                     * become obsolete a moment after taking a snapshot of
+                     * active nodes).
+                     */
+                    return;
+                }
+            }
+        }
+        
         final HashSet<String> activatedUuids = new HashSet<>();
         synchronized (activeNodeLock) {
             final int[] activeIdxs = activeNodes;
@@ -259,18 +295,16 @@ public class LoadBalancer implements AutoCloseable
             final int[] newActiveIdxs =
                     Arrays.copyOf(activeIdxs, instances.length);
             int newCount = activeIdxs.length;
-            for (final String uuid : uuids) {
-                if (activatedUuids.add(uuid)) {
-                    /* It is not an already activated UUID.
-                     * Processing further.
-                     */
-                    final Integer idx = uuidToIdx.get(uuid);
-                    if (idx == null) {
-                        throw new IllegalArgumentException(
-                                "Unknown UUID: " + uuid);
-                    }
-                    newActiveIdxs[newCount++] = idx.intValue();
+            if (activatedUuids.add(uuid)) {
+                /* It is not an already activated UUID.
+                 * Processing further.
+                 */
+                final Integer idx = uuidToIdx.get(uuid);
+                if (idx == null) {
+                    throw new IllegalArgumentException(
+                            "Unknown UUID: " + uuid);
                 }
+                newActiveIdxs[newCount++] = idx.intValue();
             }
             replaceActiveNodes(newActiveIdxs, newCount);
         }
@@ -282,6 +316,15 @@ public class LoadBalancer implements AutoCloseable
     {
         assert Thread.holdsLock(activeNodeLock);
         activeNodes = Arrays.copyOf(newActiveNodes, nodeCount);
+    }
+    
+    private int getNodeIdx(final String uuid)
+    {
+        final Integer uuidIdx = uuidToIdx.get(uuid);
+        if (uuidIdx == null) {
+            throw new IllegalStateException("Unknown UUID.");
+        }
+        return uuidIdx.intValue();
     }
     
     /* It is not inside a constructor to avoid exposing
