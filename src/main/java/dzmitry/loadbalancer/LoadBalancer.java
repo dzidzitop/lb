@@ -254,7 +254,7 @@ public class LoadBalancer implements AutoCloseable
                     newActiveNodes[j++] = activeIdx;
                 }
             }
-            // --- happens-before ---
+            // --- happens-before w.r.t. volatile write to activeNodes ---
             activeNodes = newActiveNodes;
         }
     }
@@ -292,7 +292,7 @@ public class LoadBalancer implements AutoCloseable
             final int n = activeIdxs.length;
             final int[] newActiveIdxs = Arrays.copyOf(activeIdxs, n + 1);
             newActiveIdxs[n] = nodeIdx;
-            // --- happens-before ---
+            // --- happens-before w.r.t. volatile write to activeNodes ---
             activeNodes = newActiveIdxs;
         }
     }
