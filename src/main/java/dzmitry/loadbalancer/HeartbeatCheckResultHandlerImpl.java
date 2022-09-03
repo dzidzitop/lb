@@ -6,6 +6,7 @@ import java.util.concurrent.ConcurrentHashMap;
 public class HeartbeatCheckResultHandlerImpl
         implements HeartbeatCheckResultHandler
 {
+    /** How many successful checks in row should pass to activate a node. */
     private static final int MAX_RELEVANT_SUCCESSFUL_CHECKS = 2;
     
     /* Used to store individual instances regardless of whether
@@ -71,10 +72,9 @@ public class HeartbeatCheckResultHandlerImpl
                     ++lastSuccChecks;
                     // Issuing write only when data is really changed.
                     wrapper.lastSuccessfulChecks = lastSuccChecks;
-                    
-                    if (lastSuccChecks == MAX_RELEVANT_SUCCESSFUL_CHECKS) {
-                        balancer.includeNode(node.getUuid());
-                    }
+                }
+                if (lastSuccChecks == MAX_RELEVANT_SUCCESSFUL_CHECKS) {
+                    balancer.includeNode(node.getUuid());
                 }
             }
         }
