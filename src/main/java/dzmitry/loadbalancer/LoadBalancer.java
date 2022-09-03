@@ -245,11 +245,13 @@ public class LoadBalancer implements AutoCloseable
                 return;
             }
             final int[] newActiveNodes = new int[activeIdxs.length - 1];
-            // TODO it can be made more CPU-efficient.
-            int newCount = 0;
-            for (final int activeIdx : activeIdxs) {
+            /* TODO it can be made more CPU-efficient by taking into
+             * account the position of nodeIdx in activeNodes.
+             */
+            for (int i = 0, j = 0, n = activeIdxs.length; i < n; ++i) {
+                final int activeIdx = activeIdxs[i];
                 if (nodeIdx != activeIdx) {
-                    newActiveNodes[newCount++] = activeIdx;
+                    newActiveNodes[j++] = activeIdx;
                 }
             }
             // --- happens-before ---
