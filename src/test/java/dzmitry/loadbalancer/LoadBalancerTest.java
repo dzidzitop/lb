@@ -147,6 +147,46 @@ public class LoadBalancerTest
     }
     
     @Test
+    public void testTwoProviders_RoundRobin_RepeatedActivationAndDeactivation()
+    {
+        final Provider p1 = provider("p1", "val1");
+        final Provider p2 = provider("p2", "val2");
+        
+        final LoadBalancer balancer = new LoadBalancer(
+                new Provider[]{p1, p2}, SelectorType.ROUND_ROBIN, 3);
+        
+        assertEquals("val1", balancer.get());
+        assertEquals("val2", balancer.get());
+        assertEquals("val1", balancer.get());
+        assertEquals("val2", balancer.get());
+        
+        balancer.excludeNodes("p1");
+        
+        assertEquals("val2", balancer.get());
+        
+        balancer.includeNodes("p1");
+        balancer.excludeNodes("p2");
+        
+        assertEquals("val1", balancer.get());
+        
+        balancer.excludeNodes("p2");
+        
+        assertEquals("val1", balancer.get());
+        
+        balancer.excludeNodes("p1");
+        
+        assertThrows(IllegalStateException.class, () -> balancer.get());
+        
+        balancer.includeNodes("p2");
+        
+        assertEquals("val2", balancer.get());
+        
+        balancer.includeNodes("p2");
+        
+        assertEquals("val2", balancer.get());
+    }
+    
+    @Test
     public void testTooManyRequests() throws Exception
     {
         final AtomicBoolean asyncFailure = new AtomicBoolean();
@@ -184,7 +224,6 @@ public class LoadBalancerTest
         
         for (int i = 0; i < maxRqs; ++i) {
             final Thread t = new Thread(() -> {
-                testLatch.countDown();
                 balancer.get();
             });
             t.setDaemon(true);
@@ -228,7 +267,6 @@ public class LoadBalancerTest
                 return "val1";
             }
             catch (Throwable ex) {
-                asyncFailure.set(true);
                 throw new RuntimeException(ex);
             }
         });
@@ -239,7 +277,6 @@ public class LoadBalancerTest
                 return "val2";
             }
             catch (Throwable ex) {
-                asyncFailure.set(true);
                 throw new RuntimeException(ex);
             }
         });
@@ -254,8 +291,13 @@ public class LoadBalancerTest
         
         for (int i = 0; i < maxRqs; ++i) {
             final Thread t = new Thread(() -> {
-                testLatch.countDown();
-                balancer.get();
+                try {
+                    balancer.get();
+                }
+                catch (Throwable ex) {
+                    asyncFailure.set(true);
+                    throw new RuntimeException(ex);
+                }
             });
             t.setDaemon(true);
             t.start();
