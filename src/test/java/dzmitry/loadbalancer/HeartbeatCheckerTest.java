@@ -14,7 +14,8 @@ import java.util.function.Consumer;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
 
-public class HeartbeatCheckerTest {
+public class HeartbeatCheckerTest
+{
     @Test
     public void testSingleChecker() throws Exception
     {
@@ -41,6 +42,7 @@ public class HeartbeatCheckerTest {
             results.add(inv.getArgument(0));
             return null;
         }).when(resultHandler).accept(any());
+        
         try (final HeartbeatChecker checker = new HeartbeatChecker(10)) {
             final Future<?> fut = checker.registerChecker(
                     checkFunction, resultHandler, 10, 5);
