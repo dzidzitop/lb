@@ -1,9 +1,11 @@
 package dzmitry.loadbalancer;
 
 import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.function.BooleanSupplier;
@@ -11,15 +13,32 @@ import java.util.function.Consumer;
 
 public class HeartbeatChecker implements AutoCloseable
 {
-    private final ScheduledExecutorService executor;
+    private final ScheduledExecutorService scheduledExecutor;
+    /* Variable-size pool. Have to use it separately because
+     * ScheduledExecutorService is a fixed-size pool so parallelism
+     * is limited and can get stuck.
+     */
+    private final ExecutorService handlingExecutor;
     
-    public HeartbeatChecker()
+    public HeartbeatChecker(final int schedulingThreadPoolSize)
     {
-        executor = Executors.newScheduledThreadPool(0, runnable -> {
+        final ThreadFactory threadFactory = runnable -> {
             final Thread t = new Thread(runnable);
             t.setDaemon(true);
             return t;
-        });
+        };
+        scheduledExecutor = Executors.newScheduledThreadPool(
+                schedulingThreadPoolSize, threadFactory);
+        boolean success = false;
+        try {
+            handlingExecutor = Executors.newCachedThreadPool(threadFactory);
+            success = true;
+        } finally {
+            // Gracefully tearing down in case of exceptions during init.
+            if (!success) {
+                scheduledExecutor.shutdownNow();
+            }
+        }
     }
     
     public Future<?> registerChecker(final BooleanSupplier checker,
@@ -31,8 +50,11 @@ public class HeartbeatChecker implements AutoCloseable
          * to finish in time. If heartbeat check gets stalled
          * then the task would be able to detect it this way.
          */
-        return executor.scheduleAtFixedRate(() -> {
-            final Future<Boolean> f = executor.submit(
+        return scheduledExecutor.scheduleAtFixedRate(() -> {
+            /* Running checking to support continuing on timeout even if
+             * the checker function gets stuck.
+             */
+            final Future<Boolean> f = handlingExecutor.submit(
                     () -> checker.getAsBoolean());
             Boolean result;
             try {
@@ -52,6 +74,11 @@ public class HeartbeatChecker implements AutoCloseable
     @Override
     public void close()
     {
-        executor.shutdownNow();
+        try {
+            handlingExecutor.shutdownNow();
+        }
+        finally {
+            scheduledExecutor.shutdownNow();
+        }
     }
 }

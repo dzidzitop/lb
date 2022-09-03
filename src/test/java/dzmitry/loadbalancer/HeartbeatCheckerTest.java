@@ -1,0 +1,64 @@
+package dzmitry.loadbalancer;
+
+import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.ArgumentMatchers.*;
+
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
+import java.util.concurrent.Future;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.function.BooleanSupplier;
+import java.util.function.Consumer;
+
+import org.junit.jupiter.api.Test;
+import org.mockito.Mockito;
+
+public class HeartbeatCheckerTest {
+    @Test
+    public void testSingleChecker() throws Exception
+    {
+        final BooleanSupplier checkFunction = Mockito.mock(BooleanSupplier.class);
+        final Consumer<Boolean> resultHandler = Mockito.mock(Consumer.class);
+        
+        final List<Boolean> checkResults =
+                List.of(true, false, false, true);
+        final List<Boolean> results = Collections.synchronizedList(
+                new ArrayList<>());
+        final AtomicInteger counter = new AtomicInteger();
+        
+        Mockito.when(checkFunction.getAsBoolean()).thenAnswer(inv -> {
+            final int val = counter.getAndIncrement();
+            if (val == checkResults.size()) {
+                throw new RuntimeException();
+            } else if (val > checkResults.size()) {
+                return Boolean.TRUE;
+            } else {
+                return checkResults.get(val);
+            }
+        });
+        Mockito.doAnswer(inv -> {
+            results.add(inv.getArgument(0));
+            return null;
+        }).when(resultHandler).accept(any());
+        try (final HeartbeatChecker checker = new HeartbeatChecker(10)) {
+            final Future<?> fut = checker.registerChecker(
+                    checkFunction, resultHandler, 10, 5);
+            
+            assertNotNull(fut);
+            /* At least one element is added after an exception to
+             * check processing is not stopped after it.
+             */
+            while (results.size() <= checkResults.size() + 1) {
+                Thread.sleep(20);
+            }
+            fut.cancel(true);
+            final ArrayList<Boolean> expectedResults = new ArrayList<>();
+            expectedResults.addAll(checkResults);
+            expectedResults.add(Boolean.FALSE); // for exception
+            final int tailSize = results.size() - expectedResults.size();
+            expectedResults.addAll(Collections.nCopies(tailSize, Boolean.TRUE));
+            assertEquals(expectedResults, results);
+        }
+    }
+}
