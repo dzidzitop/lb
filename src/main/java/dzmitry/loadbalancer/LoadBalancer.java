@@ -193,8 +193,8 @@ public class LoadBalancer implements AutoCloseable
     public String get()
     {
         boolean accepted = false;
+        final long maxRequests = maxLoadPerNode * activeNodes.length;
         synchronized (requestCounterLock) {
-            final long maxRequests = maxLoadPerNode * activeNodes.length;
             if (requestCounter < maxRequests) {
                 ++requestCounter;
                 accepted = true;
