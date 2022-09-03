@@ -2,7 +2,6 @@ package dzmitry.loadbalancer;
 
 import java.util.Arrays;
 import java.util.HashMap;
-import java.util.HashSet;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Random;
@@ -231,13 +230,7 @@ public class LoadBalancer implements AutoCloseable
         /* Checking if it is already excluded (to increase parallelism
          * and produce less memory garbage).
          */
-        quickCheck: {
-            final int[] activeIdxs = activeNodes;
-            for (int activeIdx : activeIdxs) {
-                if (nodeIdx == activeIdx) {
-                    break quickCheck;
-                }
-            }
+        if (!contains(activeNodes, nodeIdx)) {
             /* It is already inactive. No need to change any supplementary
              * structure. (Of course this can become obsolete a moment
              * after taking a snapshot of active nodes).
@@ -247,21 +240,27 @@ public class LoadBalancer implements AutoCloseable
         
         synchronized (activeNodeLock) {
             final int[] activeIdxs = activeNodes;
-            final int[] newActiveIdxs = new int[activeIdxs.length];
+            if (!contains(activeIdxs, nodeIdx)) {
+                // It was deactivated concurrently. Nothing to do.
+                return;
+            }
+            final int[] newActiveNodes = new int[activeIdxs.length - 1];
+            // TODO it can be made more CPU-efficient.
             int newCount = 0;
             for (final int activeIdx : activeIdxs) {
                 if (nodeIdx != activeIdx) {
-                    newActiveIdxs[newCount++] = activeIdx;
+                    newActiveNodes[newCount++] = activeIdx;
                 }
             }
-            replaceActiveNodes(newActiveIdxs, newCount);
+            // --- happens-before ---
+            activeNodes = newActiveNodes;
         }
     }
     
     public void includeNode(final String uuid)
     {
         /* 
-         * It costs O(instances.length) which can be too expensive
+         * It costs O(activeNodes.length) which can be too expensive
          * for large instance pools. If it is the case and if active
          * nodes updated frequently then adapt data structures to support
          * complexity closer to the number of nodes to exclude.
@@ -274,48 +273,37 @@ public class LoadBalancer implements AutoCloseable
          */
         {
             final int[] activeIdxs = activeNodes;
-            for (int activeIdx : activeIdxs) {
-                if (nodeIdx == activeIdx) {
-                    /* Already active. Nothing to do. (Of course this can
-                     * become obsolete a moment after taking a snapshot of
-                     * active nodes).
-                     */
-                    return;
-                }
+            if (contains(activeIdxs, nodeIdx)) {
+                /* Already active. Nothing to do. (Of course this can
+                 * become obsolete a moment after taking a snapshot of
+                 * active nodes).
+                 */
+                return;
             }
         }
         
-        final HashSet<String> activatedUuids = new HashSet<>();
         synchronized (activeNodeLock) {
             final int[] activeIdxs = activeNodes;
-            for (final int idx : activeIdxs) {
-                final Provider instance = instances[idx];
-                activatedUuids.add(instance.getUuid());
+            if (contains(activeIdxs, nodeIdx)) {
+                // It was activated concurrently. Nothing to do.
+                return;
             }
-            final int[] newActiveIdxs =
-                    Arrays.copyOf(activeIdxs, instances.length);
-            int newCount = activeIdxs.length;
-            if (activatedUuids.add(uuid)) {
-                /* It is not an already activated UUID.
-                 * Processing further.
-                 */
-                final Integer idx = uuidToIdx.get(uuid);
-                if (idx == null) {
-                    throw new IllegalArgumentException(
-                            "Unknown UUID: " + uuid);
-                }
-                newActiveIdxs[newCount++] = idx.intValue();
-            }
-            replaceActiveNodes(newActiveIdxs, newCount);
+            final int n = activeIdxs.length;
+            final int[] newActiveIdxs = Arrays.copyOf(activeIdxs, n + 1);
+            newActiveIdxs[n] = nodeIdx;
+            // --- happens-before ---
+            activeNodes = newActiveIdxs;
         }
     }
     
-    // Atomically replacing old active nodes with updated ones.
-    private void replaceActiveNodes(final int[] newActiveNodes,
-            final int nodeCount)
+    private static boolean contains(final int[] values, final int val)
     {
-        assert Thread.holdsLock(activeNodeLock);
-        activeNodes = Arrays.copyOf(newActiveNodes, nodeCount);
+        for (int v : values) {
+            if (val == v) {
+                return true;
+            }
+        }
+        return false;
     }
     
     private int getNodeIdx(final String uuid)
