@@ -55,12 +55,21 @@ public class HeartbeatCheckerTest
                 Thread.sleep(20);
             }
             fut.cancel(true);
-            final ArrayList<Boolean> expectedResults = new ArrayList<>();
-            expectedResults.addAll(checkResults);
-            expectedResults.add(Boolean.FALSE); // for exception
-            final int tailSize = results.size() - expectedResults.size();
-            expectedResults.addAll(Collections.nCopies(tailSize, Boolean.TRUE));
-            assertEquals(expectedResults, results);
+            final ArrayList<Boolean> expectedDeterministicResults = new ArrayList<>();
+            expectedDeterministicResults.addAll(checkResults);
+            expectedDeterministicResults.add(Boolean.FALSE); // for exception
+            expectedDeterministicResults.add(Boolean.TRUE); // for at least one tailing element.
+            /* Cancelled task can still push results here.
+             * Synchronising to make this deterministic.
+             */
+            synchronized (results) {
+                assertEquals(expectedDeterministicResults,
+                        results.subList(0, expectedDeterministicResults.size()));
+            }
+            for (int i = expectedDeterministicResults.size(),
+                    n = results.size(); i < n; ++i) {
+                assertTrue(results.get(i));
+            }
         }
     }
 }
