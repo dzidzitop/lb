@@ -274,8 +274,7 @@ public class LoadBalancer implements AutoCloseable
          * and produce less memory garbage).
          */
         {
-            final int[] activeIdxs = activeNodes;
-            if (contains(activeIdxs, nodeIdx)) {
+            if (contains(activeNodes, nodeIdx)) {
                 /* Already active. Nothing to do. (Of course this can
                  * become obsolete a moment after taking a snapshot of
                  * active nodes).
