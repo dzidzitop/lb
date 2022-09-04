@@ -4,7 +4,7 @@ import java.util.Arrays;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Objects;
-import java.util.Random;
+import java.util.concurrent.ThreadLocalRandom;
 
 public class LoadBalancer implements AutoCloseable
 {
@@ -17,8 +17,6 @@ public class LoadBalancer implements AutoCloseable
     
     private class RandomSelector implements Selector
     {
-        private final Random rnd = new Random(System.nanoTime());
-        
         @Override
         public int select()
         {
@@ -27,7 +25,7 @@ public class LoadBalancer implements AutoCloseable
             if (n == 0) {
                 throw new IllegalStateException("No active instances.");
             }
-            return activeIdxs[rnd.nextInt(n)];
+            return activeIdxs[ThreadLocalRandom.current().nextInt(n)];
         }
     }
     
@@ -42,6 +40,18 @@ public class LoadBalancer implements AutoCloseable
         
         public int select()
         {
+            /* It is a perfect round-robin selector. If this level
+             * of strictness is not needed and throughput is more
+             * important then lock-free atomic get-and-increment
+             * can be used with special treatment of negative values
+             * and with non-sequential selection of the next node on
+             * -1 to 0 transition. In most cases (especially if nodes
+             * are included and excluded) it would be an acceptable
+             * solution.
+             * 
+             * TODO check if a non-perfect round-robin selector
+             * is fine in your specific conditions.
+             */
             final int[] activeIdxs = activeNodes;
             final int n = activeIdxs.length;
             if (n == 0) {
